@@ -243,7 +243,9 @@ ${HEADER}
 <b>Compiler:</b> <code>${COMPILER_STRING}</code>
 EOF
 )
-    tg_send_doc "${AK3_ZIP_NAME}" "$MSG"
+    if [ "$RELEASE_TYPE" != "Release" ]; then
+        tg_send_doc "${AK3_ZIP_NAME}" "$MSG"
+    fi
 done
 
 # Release (Upload all variants to the same release)
@@ -253,6 +255,20 @@ if [ "$RELEASE_TYPE" == "Release" ] && command -v gh &> /dev/null && [ -n "$GH_T
         --repo "$RELEASE_REPO" \
         --title "${KERNEL_NAME} ${RELEASE}" \
         --notes "GKI Kernel Release for <code>${LINUX_VERSION}</code>"
+
+    # Send final announcement to Telegram with Link
+    RELEASE_URL="https://github.com/${RELEASE_REPO}/releases/tag/${RELEASE}"
+    RELEASE_MSG=$(cat << EOF
+📦 <b>New Kernel Release!</b>
+
+<b>Kernel:</b> <code>${LINUX_VERSION}</code>
+<b>Tag:</b> <code>${RELEASE}</code>
+<b>Compiler:</b> <code>${COMPILER_STRING}</code>
+
+🔗 <a href="${RELEASE_URL}">GitHub Release Page</a>
+EOF
+)
+    tg_send_msg "$RELEASE_MSG"
 fi
 
 echo "-> All tasks completed successfully!"
