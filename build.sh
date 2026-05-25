@@ -11,6 +11,7 @@ source config.sh
 
 # Inputs
 VARIANT=${1:-$DEFAULT_VARIANT}
+RELEASE_TYPE=${2:-$DEFAULT_RELEASE_TYPE}
 
 WORKDIR="$(pwd)"
 OUTDIR="$WORKDIR/out"
@@ -20,7 +21,7 @@ KSRC="$WORKDIR/ksrc"
 if [ "$RELEASE_TYPE" == "Release" ]; then
     if command -v gh &> /dev/null && [ -n "$GH_TOKEN" ]; then
         # Query the latest release tag (e.g., v1.0)
-        LATEST_TAG=$(gh api repos/"$GITHUB_REPO"/releases/latest --jq '.tag_name' 2>/dev/null || true)
+        LATEST_TAG=$(gh api repos/"$RELEASE_REPO"/releases/latest --jq '.tag_name' 2>/dev/null || true)
         if [ -z "$LATEST_TAG" ]; then
             RELEASE="v1.0"
         else
