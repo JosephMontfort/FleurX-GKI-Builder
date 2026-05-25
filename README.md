@@ -25,7 +25,7 @@ To enable Telegram notifications and GitHub Releases, you must configure the fol
 
 *   `TG_BOT_TOKEN`: Your Telegram Bot Token (obtained from @BotFather).
 *   `TG_CHAT_ID`: The ID of the Telegram chat or channel where notifications should be sent.
-*   `GITHUB_TOKEN`: A Personal Access Token (PAT) required to upload files to the `RELEASE_REPO`.
+*   `GH_TOKEN`: A Personal Access Token (PAT) required to upload files to the `RELEASE_REPO`.
 
 ### How to Generate a GitHub Token
 If you are releasing to a different repository, the default GitHub Actions token will not have permission. You must generate a custom Personal Access Token:
@@ -33,7 +33,7 @@ If you are releasing to a different repository, the default GitHub Actions token
 2. Click **Generate new token (classic)**.
 3. Give it a descriptive note (e.g., "GKI Builder Release").
 4. Under **Scopes**, check the box for `repo` (Full control of private repositories).
-5. Generate the token, copy it, and add it as a new repository secret named `GITHUB_TOKEN` in your builder repository.
+5. Generate the token, copy it, and add it as a new repository secret named `GH_TOKEN` in your builder repository.
 
 ## How to Build
 

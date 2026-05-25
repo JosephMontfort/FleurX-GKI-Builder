@@ -18,7 +18,7 @@ KSRC="$WORKDIR/ksrc"
 
 # Kernel Configuration
 if [ "$RELEASE_TYPE" == "Release" ]; then
-    if command -v gh &> /dev/null && [ -n "$GITHUB_TOKEN" ]; then
+    if command -v gh &> /dev/null && [ -n "$GH_TOKEN" ]; then
         # Query the latest release tag (e.g., v1.0)
         LATEST_TAG=$(gh api repos/"$GITHUB_REPO"/releases/latest --jq '.tag_name' 2>/dev/null || true)
         if [ -z "$LATEST_TAG" ]; then
