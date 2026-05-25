@@ -78,7 +78,7 @@ COMPILER_STRING=$(clang --version | head -n 1 | sed 's/(https..*//' | sed 's/ ve
 
 echo "-> Cloning Kernel Source..."
 if [ ! -d "$KSRC" ]; then
-    git clone --depth=1 -b "$KERNEL_BRANCH" "$KERNEL_REPO" "$KSRC"
+    git clone --depth=1 -b "$KERNEL_BRANCH" "$KERNEL_SOURCE" "$KSRC"
 fi
 
 cd "$KSRC"
