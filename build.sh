@@ -47,9 +47,9 @@ sudo timedatectl set-timezone "$TIMEZONE" || export TZ="$TIMEZONE"
 tg_send_msg() {
     if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
         curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d parse_mode="HTML" \
-            -d text="$1" >/dev/null
+            -F chat_id="${TG_CHAT_ID}" \
+            -F parse_mode="HTML" \
+            -F text="$1" >/dev/null
     fi
 }
 tg_send_doc() {
@@ -174,7 +174,10 @@ MAKE_ARGS=(
 )
 
 echo "-> Building Kernel..."
-tg_send_msg "🚀 <b>Build Started</b>%0A<b>Kernel:</b> <code>${LINUX_VERSION}</code>%0A<b>Variant:</b> <code>${VARIANT}</code>%0A<b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
+tg_send_msg "🚀 <b>Build Started</b>
+<b>Kernel:</b> <code>${LINUX_VERSION}</code>
+<b>Variant:</b> <code>${VARIANT}</code>
+<b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
 
 make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
 make -j$(nproc --all) "${MAKE_ARGS[@]}"
@@ -182,11 +185,13 @@ make -j$(nproc --all) "${MAKE_ARGS[@]}"
 KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
 if [ ! -f "$KERNEL_IMAGE" ]; then
     echo "-> Build Failed!"
-    tg_send_msg "❌ <b>Build Failed!</b>%0A<b>Variant:</b> <code>${VARIANT}</code>"
+    tg_send_msg "❌ <b>Build Failed!</b>
+<b>Variant:</b> <code>${VARIANT}</code>"
     exit 1
 fi
 
-tg_send_msg "✅ <b>Build Successful!</b>%0A<b>Variant:</b> <code>${VARIANT}</code>"
+tg_send_msg "✅ <b>Build Successful!</b>
+<b>Variant:</b> <code>${VARIANT}</code>"
 
 # AnyKernel Packaging
 cd "$WORKDIR"
@@ -206,11 +211,12 @@ zip -r9 "../${AK3_ZIP_NAME}" * -x .git README.md *placeholder
 cd ..
 
 # Release
-if [ "$RELEASE_TYPE" == "Release" ] && command -v gh &> /dev/null && [ -n "$GITHUB_TOKEN" ]; then
+if [ "$RELEASE_TYPE" == "Release" ] && command -v gh &> /dev/null && [ -n "$GH_TOKEN" ]; then
     gh release create "${AK3_ZIP_NAME%.*}" "${AK3_ZIP_NAME}" \
         --repo "$RELEASE_REPO" \
         --title "Kernel Release ${AK3_ZIP_NAME%.*}" \
-        --notes "Automated GKI Kernel Release%0A**Variant:** ${VARIANT}"
+        --notes "GKI Kernel Release
+**Variant:** ${VARIANT}"
 fi
 
 # Set proper caption based on Build Type
@@ -221,10 +227,11 @@ else
 fi
 
 MSG=$(cat << EOF
-${HEADER}%0A
-<b>Version:</b> <code>${LINUX_VERSION}</code>%0A
-<b>Variant:</b> <code>${VARIANT}</code>%0A
-<b>SuSFS:</b> <code>${SUSFS_VERSION}</code>%0A
+${HEADER}
+
+<b>Version:</b> <code>${LINUX_VERSION}</code>
+<b>Variant:</b> <code>${VARIANT}</code>
+<b>SuSFS:</b> <code>${SUSFS_VERSION}</code>
 <b>Compiler:</b> <code>${COMPILER_STRING}</code>
 EOF
 )
