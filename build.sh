@@ -153,6 +153,9 @@ EOF
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
+    # Force KSU to read from the generated output folder
+    echo 'ccflags-y += -I$(objtree)/security/selinux' >> drivers/kernelsu/Makefile
+
     SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
 else
     SUSFS_VERSION="None"
@@ -185,21 +188,20 @@ tg_send_msg "🚀 <b>Build Started</b>
 
 make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
 
-echo "-> Pre-generating SELinux headers..."
-make "${MAKE_ARGS[@]}" prepare
-make "${MAKE_ARGS[@]}" scripts
-make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/ || true
+if [ "$VARIANT" == "KSUN_SUSFS" ]; then
+    echo "-> [Stage 1] Isolating SELinux from KernelSU to defeat race conditions..."
+    ./scripts/config --file "$OUTDIR/.config" --disable CONFIG_KSU
+    make "${MAKE_ARGS[@]}" olddefconfig
 
-echo "-> Brute-forcing flask.h into the source tree..."
-FLASK_FILE=$(find "$OUTDIR" -name "flask.h" -type f | head -n 1)
-if [ -n "$FLASK_FILE" ]; then
-    echo "Found flask.h at $FLASK_FILE, copying directly to include folder!"
-    cp "$FLASK_FILE" "$KSRC/security/selinux/include/flask.h"
-else
-    echo "flask.h not generated. KSU might fail if it strictly requires it."
+    # Build SELinux natively so flask.h and av_permissions.h are fully generated
+    make -j$(nproc --all) "${MAKE_ARGS[@]}" prepare
+    make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/
+
+    echo "-> [Stage 2] Re-enabling KernelSU and running full parallel build..."
+    ./scripts/config --file "$OUTDIR/.config" --enable CONFIG_KSU
+    make "${MAKE_ARGS[@]}" olddefconfig
 fi
 
-echo "-> Starting full parallel build..."
 make -j$(nproc --all) "${MAKE_ARGS[@]}"
 
 KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
