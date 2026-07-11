@@ -165,6 +165,10 @@ EOF
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
+        # Fix flask.h missing error
+    echo 'ccflags-y += -I$(srctree)/security/selinux/include -I$(objtree)/security/selinux/include' >> drivers/kernelsu/Makefile
+
+
     SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
 else
     # Vanilla config
@@ -199,7 +203,10 @@ tg_send_msg "🚀 <b>Build Started</b>
 <b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
 
 make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
+# Pre-compile selinux to generate flask.h before KernelSU needs it
+make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/ || true
 make -j$(nproc --all) "${MAKE_ARGS[@]}"
+
 
 KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
 if [ ! -f "$KERNEL_IMAGE" ]; then
