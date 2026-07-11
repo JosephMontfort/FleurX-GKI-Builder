@@ -20,7 +20,6 @@ else
 fi
 
 WORKDIR="$(pwd)"
-OUTDIR="$WORKDIR/out"
 KSRC="$WORKDIR/ksrc"
 
 # Kernel Configuration
@@ -85,48 +84,41 @@ if [ ! -d "$KSRC" ]; then
     git clone --depth=1 -b "$KERNEL_BRANCH" "$KERNEL_SOURCE" "$KSRC"
 fi
 
-cd "$KSRC"
-LINUX_VERSION=$(make kernelversion)
-LINUX_VERSION_CODE=${LINUX_VERSION//./}
-k_lastcommit=$(git rev-parse --short HEAD)
-
 ZIP_FILES=()
 
 for VARIANT in "${VARIANTS[@]}"; do
     echo "-> Building Variant: $VARIANT"
     cd "$KSRC"
     
+    # Fully wipe the source tree between runs so Vanilla and KSUN don't clash
     git checkout . -f
-    git clean -fd
+    git clean -fdx
     
-    rm -rf "$OUTDIR"
-    mkdir -p "$OUTDIR"
+    if [ "$VARIANT" == "KSUN_SUSFS" ]; then
+        echo "-> Setting up KernelSU-Next and SUSFS..."
+        for KSUN_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
+            if [[ -d $KSUN_PATH ]]; then
+                KSUN_DIR=$(dirname "$KSUN_PATH")
+                [[ -f "$KSUN_DIR/Kconfig" ]] && sed -i '/kernelsu/d' "$KSUN_DIR/Kconfig"
+                [[ -f "$KSUN_DIR/Makefile" ]] && sed -i '/kernelsu/d' "$KSUN_DIR/Makefile"
+                rm -rf $KSUN_PATH
+            fi
+        done
 
-if [ "$VARIANT" == "KSUN_SUSFS" ]; then
-    echo "-> Setting up KernelSU-Next and SUSFS..."
-    for KSUN_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
-        if [[ -d $KSUN_PATH ]]; then
-            KSUN_DIR=$(dirname "$KSUN_PATH")
-            [[ -f "$KSUN_DIR/Kconfig" ]] && sed -i '/kernelsu/d' "$KSUN_DIR/Kconfig"
-            [[ -f "$KSUN_DIR/Makefile" ]] && sed -i '/kernelsu/d' "$KSUN_DIR/Makefile"
-            rm -rf $KSUN_PATH
+        curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+
+        SUSFS_DIR="$WORKDIR/susfs"
+        if [ ! -d "$SUSFS_DIR" ]; then
+            git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b "$SUSFS_BRANCH" "$SUSFS_DIR"
         fi
-    done
 
-    curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+        SUSFS_PATCHES="${SUSFS_DIR}/kernel_patches"
+        cp -R "$SUSFS_PATCHES"/fs/* ./fs/
+        cp -R "$SUSFS_PATCHES"/include/* ./include/
 
-    SUSFS_DIR="$WORKDIR/susfs"
-    if [ ! -d "$SUSFS_DIR" ]; then
-        git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b "$SUSFS_BRANCH" "$SUSFS_DIR"
-    fi
-
-    SUSFS_PATCHES="${SUSFS_DIR}/kernel_patches"
-    cp -R "$SUSFS_PATCHES"/fs/* ./fs/
-    cp -R "$SUSFS_PATCHES"/include/* ./include/
-
-    patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch" || true
-    
-    cat << EOF >> arch/arm64/configs/$KERNEL_DEFCONFIG
+        patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch" || true
+        
+        cat << EOF >> arch/arm64/configs/$KERNEL_DEFCONFIG
 # Extras
 CONFIG_OVERLAY_FS_XINO_AUTO=y
 CONFIG_KALLSYMS=y
@@ -149,77 +141,72 @@ CONFIG_KSU_SUSFS_ENABLE_LOG=y
 CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
 EOF
 
-    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SUS_SU
-    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+        ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SUS_SU
+        ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+        ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
-    # FIX: Forcibly inject the SELinux output paths into every single KSU sub-makefile so sucompat.c cannot be blind
-    find drivers/kernelsu -type f -name "Makefile" -exec sh -c 'echo "ccflags-y += -I\$(srctree)/security/selinux -I\$(srctree)/security/selinux/include -I\$(objtree)/security/selinux -I\$(objtree)/security/selinux/include" >> "$1"' _ {} \;
+        SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+    else
+        SUSFS_VERSION="None"
+    fi
 
-    SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
-else
-    SUSFS_VERSION="None"
-fi
+    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --set-str CONFIG_LOCALVERSION "-$KERNEL_NAME/$RELEASE"
+    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_LOCALVERSION_AUTO
+    sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
 
-./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --set-str CONFIG_LOCALVERSION "-$KERNEL_NAME/$RELEASE"
-./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_LOCALVERSION_AUTO
-sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
+    export KBUILD_BUILD_USER="$KBUILD_USER"
+    export KBUILD_BUILD_HOST="$KBUILD_HOST"
+    export KBUILD_BUILD_TIMESTAMP=$(date)
 
-export KBUILD_BUILD_USER="$KBUILD_USER"
-export KBUILD_BUILD_HOST="$KBUILD_HOST"
-export KBUILD_BUILD_TIMESTAMP=$(date)
-export KCFLAGS="-w"
+    # O=out removed to build directly in-tree
+    MAKE_ARGS=(
+      ARCH=arm64
+      LLVM=1
+      LLVM_IAS=1
+      CROSS_COMPILE=aarch64-linux-gnu-
+      CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+      CC=clang
+    )
 
-MAKE_ARGS=(
-  O=$OUTDIR
-  ARCH=arm64
-  LLVM=1
-  LLVM_IAS=1
-  CROSS_COMPILE=aarch64-linux-gnu-
-  CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
-  CC=clang
-)
-
-echo "-> Building Kernel..."
-tg_send_msg "🚀 <b>Build Started</b>
+    echo "-> Building Kernel..."
+    tg_send_msg "🚀 <b>Build Started</b>
 <b>Kernel:</b> <code>${LINUX_VERSION}</code>
 <b>Variant:</b> <code>${VARIANT}</code>
 <b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
 
-make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
+    make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
 
-if [ "$VARIANT" == "KSUN_SUSFS" ]; then
-    echo "-> Pre-generating SELinux headers..."
-    make -j$(nproc --all) "${MAKE_ARGS[@]}" prepare scripts
-    # ACTUAL FIX: Build the security folder first to physically generate flask.h!
-    make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/ || true
-fi
+    if [ "$VARIANT" == "KSUN_SUSFS" ]; then
+        echo "-> Pre-generating SELinux headers..."
+        make -j$(nproc --all) "${MAKE_ARGS[@]}" prepare scripts
+        make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/ || true
+    fi
 
-echo "-> Starting full parallel build..."
-make -j$(nproc --all) "${MAKE_ARGS[@]}"
+    echo "-> Starting full parallel build..."
+    make -j$(nproc --all) "${MAKE_ARGS[@]}"
 
-KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
-if [ ! -f "$KERNEL_IMAGE" ]; then
-    echo "-> Build Failed!"
-    tg_send_msg "❌ <b>Build Failed!</b>
+    KERNEL_IMAGE="$KSRC/arch/arm64/boot/Image"
+    if [ ! -f "$KERNEL_IMAGE" ]; then
+        echo "-> Build Failed!"
+        tg_send_msg "❌ <b>Build Failed!</b>
 <b>Variant:</b> <code>${VARIANT}</code>"
-    exit 1
-fi
+        exit 1
+    fi
 
-tg_send_msg "✅ <b>Build Successful!</b>
+    tg_send_msg "✅ <b>Build Successful!</b>
 <b>Variant:</b> <code>${VARIANT}</code>"
 
-cd "$WORKDIR"
-if [ ! -d "AnyKernel3" ]; then
-    git clone --depth=1 -b "$ANYKERNEL_BRANCH" "$ANYKERNEL_REPO" AnyKernel3
-fi
+    cd "$WORKDIR"
+    if [ ! -d "AnyKernel3" ]; then
+        git clone --depth=1 -b "$ANYKERNEL_BRANCH" "$ANYKERNEL_REPO" AnyKernel3
+    fi
 
-AK3_ZIP_NAME="${KERNEL_NAME}-${RELEASE}-${LINUX_VERSION}-${VARIANT}.zip"
-sed -i "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${RELEASE} ${LINUX_VERSION} ${VARIANT}/g" AnyKernel3/anykernel.sh
-sed -i "s/supported_kver=.*/supported_kver='5.10'/g" AnyKernel3/anykernel.sh
+    AK3_ZIP_NAME="${KERNEL_NAME}-${RELEASE}-${LINUX_VERSION}-${VARIANT}.zip"
+    sed -i "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${RELEASE} ${LINUX_VERSION} ${VARIANT}/g" AnyKernel3/anykernel.sh
+    sed -i "s/supported_kver=.*/supported_kver='5.10'/g" AnyKernel3/anykernel.sh
 
-rm -f AnyKernel3/Image AnyKernel3/Image.gz AnyKernel3/Image-dtb AnyKernel3/dtb AnyKernel3/*.zip
-cp "$KERNEL_IMAGE" AnyKernel3/
+    rm -f AnyKernel3/Image AnyKernel3/Image.gz AnyKernel3/Image-dtb AnyKernel3/dtb AnyKernel3/*.zip
+    cp "$KERNEL_IMAGE" AnyKernel3/
 
     cd AnyKernel3
     zip -r9 "../${AK3_ZIP_NAME}" * -x .git README.md *placeholder
