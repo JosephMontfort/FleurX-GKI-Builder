@@ -4,11 +4,11 @@
 # ==========================================
 # 1. Project Configuration
 # ==========================================
-KERNEL_NAME="Kitsune-SpiritFox"
-KERNEL_SOURCE="https://github.com/zerotwo-project/android_kernel_xiaomi_sm7435"
-KERNEL_BRANCH="Build"
-KBUILD_USER="zerotwo"
-KBUILD_HOST="ZeroTwo"
+KERNEL_NAME="RedLine"
+KERNEL_SOURCE="https://github.com/JosephMontfort/android_kernel_common-5.10"
+KERNEL_BRANCH="android12-5.10"
+KBUILD_USER="montfort"
+KBUILD_HOST="montfort"
 TIMEZONE="Asia/Kolkata"
 
 # ==========================================
@@ -25,12 +25,11 @@ CLANG_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/
 # ==========================================
 # 4. GitHub Release Configuration
 # ==========================================
-RELEASE_REPO="zerotwo-alt/Kitsune-SpiritFox-Release"
-
+RELEASE_REPO="https://github.com/JosephMontfort/RedLine-Kernel"
 # ==========================================
 # 5. Default Build Options
 # ==========================================
 # Options: Vanilla, KSUN_SUSFS
-DEFAULT_VARIANT="Vanilla"
+DEFAULT_VARIANT="KSUS_SUSFS"
 # Options: CI, Release
 DEFAULT_RELEASE_TYPE="CI"
