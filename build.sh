@@ -161,9 +161,9 @@ CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
 # CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set
 EOF
 
-        ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SUS_SU
-        ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-        ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SUS_SU
+    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
     SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
 else
@@ -196,4 +196,82 @@ echo "-> Building Kernel..."
 tg_send_msg "🚀 <b>Build Started</b>
 <b>Kernel:</b> <code>${LINUX_VERSION}</code>
 <b>Variant:</b> <code>${VARIANT}</code>
-s"
+<b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
+
+make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
+make -j$(nproc --all) "${MAKE_ARGS[@]}"
+
+KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
+if [ ! -f "$KERNEL_IMAGE" ]; then
+    echo "-> Build Failed!"
+    tg_send_msg "❌ <b>Build Failed!</b>
+<b>Variant:</b> <code>${VARIANT}</code>"
+    exit 1
+fi
+
+tg_send_msg "✅ <b>Build Successful!</b>
+<b>Variant:</b> <code>${VARIANT}</code>"
+
+# AnyKernel Packaging
+cd "$WORKDIR"
+if [ ! -d "AnyKernel3" ]; then
+    git clone --depth=1 -b "$ANYKERNEL_BRANCH" "$ANYKERNEL_REPO" AnyKernel3
+fi
+
+AK3_ZIP_NAME="${KERNEL_NAME}-${RELEASE}-${LINUX_VERSION}-${VARIANT}.zip"
+sed -i "s/kernel.string=.*/kernel.string=${KERNEL_NAME} ${RELEASE} ${LINUX_VERSION} ${VARIANT}/g" AnyKernel3/anykernel.sh
+sed -i "s/supported_kver=.*/supported_kver='5.10'/g" AnyKernel3/anykernel.sh
+
+rm -f AnyKernel3/Image AnyKernel3/Image.gz AnyKernel3/Image-dtb AnyKernel3/dtb AnyKernel3/*.zip
+cp "$KERNEL_IMAGE" AnyKernel3/
+
+    cd AnyKernel3
+    zip -r9 "../${AK3_ZIP_NAME}" * -x .git README.md *placeholder
+    cd ..
+    ZIP_FILES+=("${AK3_ZIP_NAME}")
+
+    # Set proper caption based on Build Type
+    if [ "$RELEASE_TYPE" == "Release" ]; then
+      HEADER="📦 <b>New Kernel Release!</b>"
+    else
+      HEADER="🧪 <b>New CI Build!</b>"
+    fi
+
+    MSG=$(cat << EOF
+${HEADER}
+
+<b>Version:</b> <code>${LINUX_VERSION}</code>
+<b>Variant:</b> <code>${VARIANT}</code>
+<b>SuSFS:</b> <code>${SUSFS_VERSION}</code>
+<b>Compiler:</b> <code>${COMPILER_STRING}</code>
+EOF
+)
+    if [ "$RELEASE_TYPE" != "Release" ]; then
+        tg_send_doc "${AK3_ZIP_NAME}" "$MSG"
+    fi
+done
+
+# Release (Upload all variants to the same release)
+if [ "$RELEASE_TYPE" == "Release" ] && command -v gh &> /dev/null && [ -n "$GH_TOKEN" ]; then
+    echo "-> Creating GitHub Release..."
+    gh release create "${RELEASE}" "${ZIP_FILES[@]}" \
+        --repo "$RELEASE_REPO" \
+        --title "${KERNEL_NAME} ${RELEASE}" \
+        --notes "GKI Kernel Release for <code>${LINUX_VERSION}</code>"
+
+    # Send final announcement to Telegram with Link
+    RELEASE_URL="https://github.com/${RELEASE_REPO}/releases/tag/${RELEASE}"
+    RELEASE_MSG=$(cat << EOF
+📦 <b>New Kernel Release!</b>
+
+<b>Kernel:</b> <code>${LINUX_VERSION}</code>
+<b>Tag:</b> <code>${RELEASE}</code>
+<b>Compiler:</b> <code>${COMPILER_STRING}</code>
+
+🔗 <a href="${RELEASE_URL}">GitHub Release Page</a>
+EOF
+)
+    tg_send_msg "$RELEASE_MSG"
+fi
+
+echo "-> All tasks completed successfully!"
