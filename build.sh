@@ -153,6 +153,9 @@ EOF
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
+    # FIX: Forcibly push the SELinux include paths into EVERY sub-makefile in KernelSU
+    find -L drivers/kernelsu -type f -name "Makefile" -exec sh -c 'echo "ccflags-y += -I\$(objtree)/security/selinux -I\$(srctree)/security/selinux" >> "$1"' _ {} \;
+
     SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
 else
     SUSFS_VERSION="None"
@@ -165,9 +168,7 @@ sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
 export KBUILD_BUILD_USER="$KBUILD_USER"
 export KBUILD_BUILD_HOST="$KBUILD_HOST"
 export KBUILD_BUILD_TIMESTAMP=$(date)
-
-# ULTIMATE FIX: Force Kbuild to inject these include paths into every single Clang command
-export KCFLAGS="-w -I$OUTDIR/security/selinux -I$OUTDIR/security/selinux/include -I$KSRC/security/selinux -I$KSRC/security/selinux/include"
+export KCFLAGS="-w"
 
 MAKE_ARGS=(
   O=$OUTDIR
@@ -186,20 +187,6 @@ tg_send_msg "🚀 <b>Build Started</b>
 <b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
 
 make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
-
-if [ "$VARIANT" == "KSUN_SUSFS" ]; then
-    echo "-> Pre-generating SELinux headers..."
-    make "${MAKE_ARGS[@]}" prepare
-    make "${MAKE_ARGS[@]}" scripts
-    make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/ || true
-    
-    echo "-> Hard-copying flask.h to bypass KSU pathing bugs..."
-    mkdir -p "$KSRC/security/selinux/include"
-    find "$OUTDIR/security/selinux" -name "flask.h" -exec cp {} "$KSRC/security/selinux/include/" \; || true
-    find "$OUTDIR/security/selinux" -name "av_permissions.h" -exec cp {} "$KSRC/security/selinux/include/" \; || true
-fi
-
-echo "-> Starting full parallel build..."
 make -j$(nproc --all) "${MAKE_ARGS[@]}"
 
 KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
