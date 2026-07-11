@@ -32,4 +32,4 @@ RELEASE_REPO="https://github.com/JosephMontfort/RedLine-Kernel"
 # Options: Vanilla, KSUN_SUSFS
 DEFAULT_VARIANT="KSUS_SUSFS"
 # Options: CI, Release
-DEFAULT_RELEASE_TYPE="CI"
+DEFAULT_RELEASE_TYPE="Release"
