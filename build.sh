@@ -26,12 +26,10 @@ KSRC="$WORKDIR/ksrc"
 # Kernel Configuration
 if [ "$RELEASE_TYPE" == "Release" ]; then
     if command -v gh &> /dev/null && [ -n "$GH_TOKEN" ]; then
-        # Query the latest release tag (e.g., v1.0)
         LATEST_TAG=$(gh api repos/"$RELEASE_REPO"/releases/latest --jq '.tag_name' 2>/dev/null || true)
         if [ -z "$LATEST_TAG" ]; then
             RELEASE="v1.0"
         else
-            # Extract major and minor version and increment minor
             MAJOR=$(echo "$LATEST_TAG" | grep -oP 'v\K\d+' || echo "1")
             MINOR=$(echo "$LATEST_TAG" | grep -oP '\.\K\d+' || echo "0")
             RELEASE="v${MAJOR}.$((MINOR + 1))"
@@ -40,7 +38,6 @@ if [ "$RELEASE_TYPE" == "Release" ]; then
         RELEASE="v1.0"
     fi
 else
-    # No versioning in CI, just use a date stamp
     RELEASE="CI-$(date +"%Y%m%d")"
 fi
 
@@ -99,20 +96,16 @@ for VARIANT in "${VARIANTS[@]}"; do
     echo "-> Building Variant: $VARIANT"
     cd "$KSRC"
     
-    # Reset kernel source to clean state
     git checkout . -f
     git clean -fd
     
     rm -rf "$OUTDIR"
     mkdir -p "$OUTDIR"
 
-    # KSUN and SUSFS
 if [ "$VARIANT" == "KSUN_SUSFS" ]; then
     echo "-> Setting up KernelSU-Next and SUSFS..."
-    # Remove existing KSUN
     for KSUN_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
         if [[ -d $KSUN_PATH ]]; then
-            echo "Removing existing $KSUN_PATH"
             KSUN_DIR=$(dirname "$KSUN_PATH")
             [[ -f "$KSUN_DIR/Kconfig" ]] && sed -i '/kernelsu/d' "$KSUN_DIR/Kconfig"
             [[ -f "$KSUN_DIR/Makefile" ]] && sed -i '/kernelsu/d' "$KSUN_DIR/Makefile"
@@ -120,10 +113,8 @@ if [ "$VARIANT" == "KSUN_SUSFS" ]; then
         fi
     done
 
-    # KernelSU-Next
     curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
 
-    # SUSFS
     SUSFS_DIR="$WORKDIR/susfs"
     if [ ! -d "$SUSFS_DIR" ]; then
         git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b "$SUSFS_BRANCH" "$SUSFS_DIR"
@@ -135,7 +126,6 @@ if [ "$VARIANT" == "KSUN_SUSFS" ]; then
 
     patch -p1 < "$SUSFS_PATCHES/50_add_susfs_in_${SUSFS_BRANCH}.patch" || true
     
-    # Apply extra KSUN and SUSFS configs
     cat << EOF >> arch/arm64/configs/$KERNEL_DEFCONFIG
 # Extras
 CONFIG_OVERLAY_FS_XINO_AUTO=y
@@ -157,23 +147,24 @@ CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
 CONFIG_KSU_SUSFS_SPOOF_UNAME=y
 CONFIG_KSU_SUSFS_ENABLE_LOG=y
 CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
 EOF
+
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SUS_SU
+    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+    ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+
+    # FIX: Forcibly inject the SELinux output paths into every single KSU sub-makefile so sucompat.c cannot be blind
+    find drivers/kernelsu -type f -name "Makefile" -exec sh -c 'echo "ccflags-y += -I\$(srctree)/security/selinux -I\$(srctree)/security/selinux/include -I\$(objtree)/security/selinux -I\$(objtree)/security/selinux/include" >> "$1"' _ {} \;
 
     SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
 else
-    # Vanilla config
     SUSFS_VERSION="None"
 fi
 
-# Set Localversion
 ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --set-str CONFIG_LOCALVERSION "-$KERNEL_NAME/$RELEASE"
 ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_LOCALVERSION_AUTO
 sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
 
-# Build Variables
 export KBUILD_BUILD_USER="$KBUILD_USER"
 export KBUILD_BUILD_HOST="$KBUILD_HOST"
 export KBUILD_BUILD_TIMESTAMP=$(date)
@@ -196,6 +187,15 @@ tg_send_msg "🚀 <b>Build Started</b>
 <b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
 
 make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
+
+if [ "$VARIANT" == "KSUN_SUSFS" ]; then
+    echo "-> Pre-generating SELinux headers..."
+    make -j$(nproc --all) "${MAKE_ARGS[@]}" prepare scripts
+    # ACTUAL FIX: Build the security folder first to physically generate flask.h!
+    make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/ || true
+fi
+
+echo "-> Starting full parallel build..."
 make -j$(nproc --all) "${MAKE_ARGS[@]}"
 
 KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
@@ -209,7 +209,6 @@ fi
 tg_send_msg "✅ <b>Build Successful!</b>
 <b>Variant:</b> <code>${VARIANT}</code>"
 
-# AnyKernel Packaging
 cd "$WORKDIR"
 if [ ! -d "AnyKernel3" ]; then
     git clone --depth=1 -b "$ANYKERNEL_BRANCH" "$ANYKERNEL_REPO" AnyKernel3
@@ -227,7 +226,6 @@ cp "$KERNEL_IMAGE" AnyKernel3/
     cd ..
     ZIP_FILES+=("${AK3_ZIP_NAME}")
 
-    # Set proper caption based on Build Type
     if [ "$RELEASE_TYPE" == "Release" ]; then
       HEADER="📦 <b>New Kernel Release!</b>"
     else
@@ -248,7 +246,6 @@ EOF
     fi
 done
 
-# Release (Upload all variants to the same release)
 if [ "$RELEASE_TYPE" == "Release" ] && command -v gh &> /dev/null && [ -n "$GH_TOKEN" ]; then
     echo "-> Creating GitHub Release..."
     gh release create "${RELEASE}" "${ZIP_FILES[@]}" \
@@ -256,7 +253,6 @@ if [ "$RELEASE_TYPE" == "Release" ] && command -v gh &> /dev/null && [ -n "$GH_T
         --title "${KERNEL_NAME} ${RELEASE}" \
         --notes "GKI Kernel Release for <code>${LINUX_VERSION}</code>"
 
-    # Send final announcement to Telegram with Link
     RELEASE_URL="https://github.com/${RELEASE_REPO}/releases/tag/${RELEASE}"
     RELEASE_MSG=$(cat << EOF
 📦 <b>New Kernel Release!</b>
