@@ -65,20 +65,6 @@ tg_send_doc() {
     fi
 }
 
-ensure_selinux_headers() {
-    echo "-> Generating SELinux headers for KernelSU..."
-    # First generate the normal prepare targets.
-    make -j1 "${MAKE_ARGS[@]}" prepare
-
-    # Then force the generated SELinux headers to exist before KSU files compile.
-    make -j1 "${MAKE_ARGS[@]}" security/selinux/flask.h security/selinux/av_permissions.h
-
-    # Verify the generated header exists where objtree-based include paths expect it.
-    if [ ! -f "$OUTDIR/security/selinux/flask.h" ] && [ ! -f "$OUTDIR/security/selinux/include/flask.h" ]; then
-        echo "Error: SELinux header generation failed; flask.h not found under $OUTDIR/security/selinux/"
-        exit 1
-    fi
-}
 
 echo "-> Downloading and setting up Clang..."
 CLANG_DIR="$WORKDIR/clang"
@@ -168,11 +154,12 @@ EOF
         ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
         ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
-        # Force KSU to read from the generated output folder
-        if ! grep -q 'security/selinux' drivers/kernelsu/Makefile 2>/dev/null; then
+        # Make KernelSU find SELinux headers from both source and out tree.
+        if ! grep -q 'security/selinux/include/generated' drivers/kernelsu/Makefile 2>/dev/null; then
             cat >> drivers/kernelsu/Makefile <<'EOF'
-ccflags-y += -I$(objtree)/security/selinux
 ccflags-y += -I$(srctree)/security/selinux/include
+ccflags-y += -I$(objtree)/security/selinux/include/generated
+ccflags-y += -I$(objtree)/security/selinux
 EOF
         fi
 
