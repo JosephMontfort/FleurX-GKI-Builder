@@ -153,8 +153,8 @@ EOF
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
     ./scripts/config --file arch/arm64/configs/$KERNEL_DEFCONFIG --disable CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
-    # FIX: Forcibly push the SELinux include paths into EVERY sub-makefile in KernelSU
-    find -L drivers/kernelsu -type f -name "Makefile" -exec sh -c 'echo "ccflags-y += -I\$(objtree)/security/selinux -I\$(srctree)/security/selinux" >> "$1"' _ {} \;
+    # FIX: Inject exact include paths directly into the top of KernelSU's main Makefile
+    sed -i '1i ccflags-y += -I$(srctree)/security/selinux/include -I$(objtree)/security/selinux/include' KernelSU-Next/kernel/Makefile
 
     SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
 else
@@ -187,6 +187,10 @@ tg_send_msg "🚀 <b>Build Started</b>
 <b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
 
 make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
+
+# FIX: Pre-generate all headers before full build
+make -j$(nproc --all) "${MAKE_ARGS[@]}" scripts prepare
+
 make -j$(nproc --all) "${MAKE_ARGS[@]}"
 
 KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
