@@ -184,7 +184,8 @@ sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
 export KBUILD_BUILD_USER="$KBUILD_USER"
 export KBUILD_BUILD_HOST="$KBUILD_HOST"
 export KBUILD_BUILD_TIMESTAMP=$(date)
-export KCFLAGS="-w"
+export KCFLAGS="-w -I$OUTDIR/security/selinux/include"
+
 
 MAKE_ARGS=(
   O=$OUTDIR
@@ -203,9 +204,14 @@ tg_send_msg "🚀 <b>Build Started</b>
 <b>Build Type:</b> <code>${RELEASE_TYPE}</code>"
 
 make "${MAKE_ARGS[@]}" $KERNEL_DEFCONFIG
-# Pre-compile selinux to generate flask.h before KernelSU needs it
-make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/ || true
+
+# Force SELinux to build first so flask.h is guaranteed to exist
+make -j$(nproc --all) "${MAKE_ARGS[@]}" prepare
+make -j$(nproc --all) "${MAKE_ARGS[@]}" security/selinux/
+
+# Now build the rest of the kernel
 make -j$(nproc --all) "${MAKE_ARGS[@]}"
+
 
 
 KERNEL_IMAGE="$OUTDIR/arch/arm64/boot/Image"
