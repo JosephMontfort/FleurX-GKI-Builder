@@ -25,11 +25,11 @@ CLANG_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/
 # ==========================================
 # 4. GitHub Release Configuration
 # ==========================================
-RELEASE_REPO="https://github.com/JosephMontfort/RedLine-Kernel"
+RELEASE_REPO="JosephMontfort/RedLine-Kernel"
 # ==========================================
 # 5. Default Build Options
 # ==========================================
 # Options: Vanilla, KSUN_SUSFS
-DEFAULT_VARIANT="KSUS_SUSFS"
+DEFAULT_VARIANT="KSUN_SUSFS"
 # Options: CI, Release
 DEFAULT_RELEASE_TYPE="Release"
